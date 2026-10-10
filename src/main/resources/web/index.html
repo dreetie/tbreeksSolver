@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reeksoptimalisatie</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #ffffff; --fg: #1d2330; --muted: #6b7384; --line: #dfe3ea;
+  --accent: #2f5fd0; --good: #1c8a54; --bad: #c0392b; --warn: #c77700;
+  --early: #2f5fd0; --morning: #4a90d9; --day: #3fa57a; --after: #e0a030; --late: #d9622b; --night: #7a3fb0;
+  --rest: #e8ebf0; --restc: #d7e6f5; --resty: #f1dcf5;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171d; --card: #1d222b; --fg: #e6e9ef; --muted: #98a1b3; --line: #2e3542;
+    --accent: #6c93f0; --good: #4cc38a; --bad: #ff7b6b; --warn: #f0b04d;
+    --rest: #272d38; --restc: #25364a; --resty: #3a2a45; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+header { display: flex; align-items: center; gap: 14px; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; background: var(--rest); color: var(--muted); }
+.chip.running { background: var(--accent); color: #fff; }
+.chip.done { background: var(--good); color: #fff; }
+.chip.error { background: var(--bad); color: #fff; }
+main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+@media (max-width: 1050px) { main { grid-template-columns: 1fr; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+.card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 650; }
+.card h2 small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+textarea { width: 100%; height: 150px; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--bg); color: var(--fg); resize: vertical; white-space: pre; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.stop { background: var(--bad); border-color: var(--bad); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.hint { color: var(--muted); font-size: 12px; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 12px; }
+.slider label { font-size: 13px; }
+.slider .val { text-align: right; font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--accent); min-width: 2.2em; }
+.slider input { grid-column: 1 / 3; width: 100%; accent-color: var(--accent); margin: 0; }
+.tag { display: inline-block; font-size: 10px; font-weight: 650; padding: 0 6px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
+.tag.avoid { background: #fde3df; color: #b3382a; } .tag.keep { background: #dcf3e6; color: #1c7a4a; }
+@media (prefers-color-scheme: dark) { .tag.avoid { background: #4a2420; color: #ff9d90; } .tag.keep { background: #1f3d2d; color: #7fdcaa; } }
+.slider .ends { grid-column: 1 / 3; display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: -3px; }
+.slider .sub { grid-column: 1 / 3; font-size: 11px; color: var(--muted); margin-top: -2px; }
+.settings { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: center; }
+.settings input[type=number], .settings select { width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.bar { height: 8px; background: var(--rest); border-radius: 4px; overflow: hidden; margin-top: 10px; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width .5s linear; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.kpi { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.kpi b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.kpi span { color: var(--muted); font-size: 11px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.better { color: var(--good); font-weight: 650; }
+td.worse { color: var(--bad); font-weight: 650; }
+td.same { color: var(--muted); }
+tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+.err { color: var(--bad); margin-top: 8px; white-space: pre-wrap; }
+.msgs { font-size: 12px; color: var(--bad); margin-top: 6px; }
+/* kalender */
+.cal { overflow-x: auto; }
+.cal table { border-collapse: separate; border-spacing: 3px; width: auto; min-width: 100%; }
+.cal th { text-align: center; padding: 2px 4px; border: 0; }
+.cal td { border: 0; padding: 0; text-align: center; }
+.cal td.wk { color: var(--muted); font-size: 12px; padding-right: 6px; text-align: right; }
+.cell { position: relative; min-width: 76px; height: 40px; border-radius: 5px; padding: 2px 3px; font-size: 11px; line-height: 1.2; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 2px solid transparent; }
+.cell b { font-size: 12px; }
+.cell.rest { color: var(--fg); background: var(--rest); }
+.cell.RR, .cell.RH, .cell.RH_CH, .cell.RR_CV { background: var(--rest); }
+.cell.CH, .cell.CV { background: var(--restc); }
+.cell.CY { background: var(--resty); }
+.cell.early { background: var(--early); } .cell.morning { background: var(--morning); } .cell.dayc { background: var(--day); }
+.cell.after { background: var(--after); } .cell.latec { background: var(--late); } .cell.nightc { background: var(--night); }
+.cell.endlate { border-bottom-color: #ffd2d2; }
+.cell.moved::after { content: attr(data-from); position: absolute; top: 0; right: 2px; font-size: 9px; opacity: .85; }
+.cell.moved { outline: 2px dotted var(--accent); outline-offset: -1px; }
+.hours { font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 6px; text-align: left; white-space: nowrap; }
+.hours.over { color: var(--bad); font-weight: 700; } .hours.hi { color: var(--warn); font-weight: 650; }
+.legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin: 8px 0; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+.seg button.on { background: var(--accent); color: #fff; }
+pre.out { font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; margin: 6px 0 0; }
+
+/* ---------- afdrukken / PDF ---------- */
+#printRoot { display: none; }
+@page { size: A4 landscape; margin: 8mm; }
+@media print {
+  :root { --bg:#fff; --card:#fff; --fg:#1d2330; --muted:#6b7384; --line:#cfd5df; --accent:#2f5fd0; --good:#1c8a54; --bad:#c0392b; --warn:#c77700;
+    --early:#2f5fd0; --morning:#4a90d9; --day:#3fa57a; --after:#e0a030; --late:#d9622b; --night:#7a3fb0; --rest:#e8ebf0; --restc:#d7e6f5; --resty:#f1dcf5; }
+  body > *:not(#printRoot) { display: none !important; }
+  body { background: #fff; color: #1d2330; font-size: 9pt; }
+  #printRoot { display: block; }
+  #printRoot * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #printRoot .pp { page-break-after: always; }
+  #printRoot .pp:last-child { page-break-after: auto; }
+  #printRoot h1 { font-size: 15pt; margin: 0 0 1mm; }
+  #printRoot h2 { font-size: 11pt; margin: 0 0 2mm; }
+  #printRoot .sub { color: #6b7384; font-size: 8.5pt; margin-bottom: 3mm; }
+  #printRoot table { border-collapse: collapse; width: 100%; }
+  #printRoot td, #printRoot th { padding: 0.9mm 1.6mm; border-bottom: 0.2mm solid #dfe3ea; font-size: 8.5pt; text-align: left; }
+  #printRoot th { color: #6b7384; font-weight: 600; font-size: 8pt; }
+  #printRoot td.n, #printRoot th.n { text-align: right; }
+  #printRoot table.dense td, #printRoot table.dense th { padding: 0.35mm 1.6mm; font-size: 7.8pt; }
+  #printRoot table.pcal { border-collapse: separate; border-spacing: 0.8mm; }
+  #printRoot table.pcal td { border: 0; padding: 0.7mm 0.6mm; text-align: center; font-size: 7pt; line-height: 1.15; border-radius: 1mm; color: #fff; white-space: nowrap; }
+  #printRoot table.pcal td.wk, #printRoot table.pcal td.hrs, #printRoot table.pcal th { color: #6b7384; background: none; font-size: 7pt; }
+  #printRoot table.pcal td.hrs.over { color: #c0392b; font-weight: 700; }
+  #printRoot table.pcal td.hrs.hi { color: #c77700; font-weight: 700; }
+  #printRoot table.pcal td.rest, #printRoot table.pcal td.RR, #printRoot table.pcal td.RH, #printRoot table.pcal td.RH_CH, #printRoot table.pcal td.RR_CV { background: var(--rest); color: #1d2330; }
+  #printRoot table.pcal td.CH, #printRoot table.pcal td.CV { background: var(--restc); color: #1d2330; }
+  #printRoot table.pcal td.CY { background: var(--resty); color: #1d2330; }
+  #printRoot table.pcal td.early { background: var(--early); } #printRoot table.pcal td.morning { background: var(--morning); }
+  #printRoot table.pcal td.dayc { background: var(--day); } #printRoot table.pcal td.after { background: var(--after); }
+  #printRoot table.pcal td.latec { background: var(--late); } #printRoot table.pcal td.nightc { background: var(--night); }
+  #printRoot table.pcal td.endlate { box-shadow: inset 0 -0.7mm 0 #ffd2d2; }
+  #printRoot table.pcal td.moved { outline: 0.35mm dotted #1d2330; outline-offset: -0.5mm; }
+  #printRoot .legend { display: block; font-size: 7pt; color: #6b7384; margin-top: 2mm; }
+  #printRoot .legend i { display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 0.6mm; vertical-align: -0.4mm; margin: 0 0.8mm 0 2.5mm; }
+  #printRoot .kp { display: inline-block; border: 0.25mm solid #cfd5df; border-radius: 1.5mm; padding: 1.5mm 4mm; margin: 0 3mm 3mm 0; }
+  #printRoot .kp b { display: block; font-size: 14pt; }
+  #printRoot .kp span { font-size: 7.5pt; color: #6b7384; }
+  #printRoot .good { color: #1c8a54; font-weight: 700; } #printRoot .bad { color: #c0392b; font-weight: 700; } #printRoot .mut { color: #6b7384; }
+  #printRoot pre { font: 7pt/1.35 monospace; margin: 0; white-space: pre; }
+  #printRoot .two { display: table; width: 100%; } #printRoot .two > div { display: table-cell; width: 50%; vertical-align: top; padding-right: 5mm; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Reeksoptimalisatie <small style="font-weight:400;color:var(--muted)">Timefold · lokaal</small></h1>
+  <span id="state" class="chip">klaar</span>
+  <span id="liveScore" class="hint"></span>
+</header>
+<main>
+  <!-- LINKS: invoer en instellingen -->
+  <div>
+    <div class="card">
+      <h2>1. Reeks <small>week;R1;R2;…;R7</small></h2>
+      <textarea id="series" spellcheck="false" placeholder="1;300 03:25-12:10;301 03:50-11:00;005 04:30-12:30;CH;305 05:10-14:10;RR;RH/CH"></textarea>
+      <div class="row">
+        <button id="btnDefault">Laad voorbeeld (Reeks A, LK)</button>
+        <button id="btnCheck">Controleer reeks</button>
+        <input type="file" id="file" accept=".txt,.csv,.pdf" style="display:none"><button type="button" id="btnFile">Open bestand of PDF…</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Eén regel per week, 7 cellen (ma t/m zo) gescheiden door <code>;</code>. Cel = <code>dienst begin-einde</code> of rustcode (RH, RR, CH, CV, CY, RH/CH, RR/CV). Einde vóór begin = over middernacht.</div>
+      <div id="seriesErr" class="err"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Wat vind jij belangrijk?</h2>
+      <div class="hint" style="margin-bottom:12px">Geef elk punt een cijfer van 1 tot 10 (0 = telt niet mee).
+        Bij <b>vermijden</b> betekent een hoog cijfer: dat wil ik zo weinig mogelijk. Bij <b>behouden</b> betekent een hoog cijfer: dat wil ik graag hebben.
+        De verplichte regels (14 u rust, 50 u per week, enz.) worden altijd gerespecteerd.</div>
+      <div id="sliders"></div>
+      <div class="row"><button id="btnReset">Mijn startwaarden</button><button id="btnAll5">Alles even belangrijk</button></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Optimaliseren</h2>
+      <div class="settings">
+        <label>Duur (seconden)</label><input type="number" id="seconds" value="90" min="10" max="3600" step="10">
+        <label>Parallelle zoekruns</label><input type="number" id="threads" value="" min="1" max="16" placeholder="auto">
+        <label>Startpunt</label>
+        <select id="from"><option value="original">Originele reeks</option><option value="best">Huidig voorstel</option></select>
+      </div>
+      <div class="row">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnStop" class="stop" disabled>Stop</button>
+      </div>
+      <div class="bar"><div id="bar"></div></div>
+      <div id="runErr" class="err"></div>
+      <div class="hint" style="margin-top:8px">Elke run is niet bewezen optimaal. Meerdere runs en een langere duur geven meestal een beter resultaat; gebruik “Huidig voorstel” om verder te verfijnen.</div>
+    </div>
+  </div>
+
+  <!-- RECHTS: resultaat -->
+  <div>
+    <div class="card" id="valCard" style="display:none">
+      <h2>Controle van de ingelezen reeks <small>vergelijk met de samenvatting in je PDF</small></h2>
+      <div class="kpis" id="kpis"></div>
+      <div class="hint" id="valNote" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card" id="cmpCard" style="display:none">
+      <h2>Huidig versus voorstel</h2>
+      <div id="cmp"></div>
+      <div id="msgs" class="msgs"></div>
+    </div>
+
+    <div class="card" id="calCard" style="display:none">
+      <h2>Kalender
+        <span class="seg" style="margin-left:10px"><button id="vBest" class="on">Voorstel</button><button id="vOrig">Origineel</button></span>
+        <button id="btnPdf" style="margin-left:10px">Exporteer als PDF</button>
+      </h2>
+      <div class="legend">
+        <span><i style="background:var(--early)"></i>start &lt; 05:00</span>
+        <span><i style="background:var(--morning)"></i>05:00–08:00</span>
+        <span><i style="background:var(--day)"></i>08:00–13:00</span>
+        <span><i style="background:var(--after)"></i>13:00–16:00</span>
+        <span><i style="background:var(--late)"></i>16:00–18:00</span>
+        <span><i style="background:var(--night)"></i>start ≥ 18:00</span>
+        <span><i style="background:var(--rest)"></i>RH/RR</span>
+        <span><i style="background:var(--restc)"></i>CH/CV</span>
+        <span><i style="background:var(--resty)"></i>CY</span>
+        <span>onderlijn rood = einde na 00:00 · gestippeld = verplaatst (cijfer = oorspronkelijke week)</span>
+      </div>
+      <div class="cal"><table id="cal"></table></div>
+    </div>
+
+    <div class="card" id="txtCard" style="display:none">
+      <h2>Nieuwe reeks als tekst</h2>
+      <div class="row" style="margin-top:0"><button id="btnPdf2">Exporteer als PDF</button><button id="btnCopy">Kopieer</button><button id="btnUse">Gebruik als invoer</button></div>
+      <pre class="out" id="txt"></pre>
+    </div>
+  </div>
+</main>
+<div id="printRoot"></div>
+
+<script>
+"use strict";
+// Eén slider per "groep" van regels. Volgorde van regels = Z1..Z11 op de server (index 0..10).
+// Halve weekends (4) en vrije weekends (9) delen één slider.
+const GROUPS = [
+  { rules: [0], tag: "avoid", q: "Van vroege naar late dienst (of omgekeerd) met maar één rustdag ertussen", d: "Losse rustdag tussen twee diensten, vooral als het beginuur sterk verschilt" },
+  { rules: [1], tag: "avoid", q: "6 van de 7 dagen werken (of 7 van de 8)", d: "Weken waarin je bijna elke dag werkt" },
+  { rules: [2], tag: "avoid", q: "Rustblokken van 3 dagen", d: "Liever 2 vrije dagen na elkaar dan 3; ook twee W-rustdagen (RH/RR) naast elkaar" },
+  { rules: [3], tag: "avoid", q: "Zware weken (boven 42 u, richting de 50 u)", d: "Hoe dichter bij 50 u, hoe zwaarder" },
+  { rules: [4, 9], tag: "keep", q: "Volledige weekends: zaterdag én zondag samen vrij (of samen werken)", d: "Vermijdt halve weekends (één dag werken, één dag vrij) en geeft zoveel mogelijk vrije weekends. Op 10 zijn halve weekends helemaal uitgesloten." },
+  { rules: [5], tag: "avoid", q: "Heel vroege starts (voor 05:00)", d: "Vooral meerdere na elkaar" },
+  { rules: [6], tag: "avoid", q: "Late einden (na middernacht)", d: "Vooral meerdere na elkaar" },
+  { rules: [7], tag: "avoid", q: "Maar net 14 u rust tussen twee diensten", d: "Rust van 14:00 tot 15:00, zwaarder voor een vroege start erna" },
+  { rules: [8], tag: "avoid", q: "Lange werkreeksen (4 dagen of meer na elkaar)", d: "Hoe hoger je dit zet, hoe korter de reeksen: 5 dagen telt zwaarder, elke dag erboven nog veel meer" },
+  { rules: [10], tag: "avoid", q: "Twee lange diensten (8:30 of meer) na elkaar", d: "" },
+  { rules: [11], tag: "avoid", q: "Twee weekends na elkaar werken", d: "Zaterdag of zondag gewerkt in twee opeenvolgende weken; drie na elkaar telt veel zwaarder. Op 10 is het uitgesloten (lukt dat niet, dan zie je een melding)." }
+];
+const lvl = s => s === 0 ? "uit" : s + "/10";
+function importance(s) { return s <= 0 ? 0 : Math.pow(5, (s - 5) / 2.5); }
+const DEFAULT_SCORES = [10, 8, 5, 6, 10, 5, 5, 2, 5, 8, 8, 10];
+const $ = id => document.getElementById(id);
+let scores = DEFAULT_SCORES.slice();
+let lastStatus = null;
+let view = "best";
+let timer = null;
+const forbidHalf = () => scores[4] === 10;
+const forbidConsec = () => scores[11] === 10;
+function syncGroups() { GROUPS.forEach(g => g.rules.forEach(r => { scores[r] = scores[g.rules[0]]; })); }
+syncGroups();
+
+function buildSliders() {
+  const host = $("sliders");
+  host.innerHTML = "";
+  GROUPS.forEach((g, k) => {
+    const d = document.createElement("div");
+    d.className = "slider";
+    d.innerHTML = '<label for="s' + k + '"></label><span class="val" id="v' + k + '"></span>' +
+      '<input type="range" id="s' + k + '" min="0" max="10" step="1">' +
+      '<span class="ends"><span>0 = telt niet mee</span><span>' + (g.tag === "keep" ? "10 = heel belangrijk" : "10 = absoluut vermijden") + '</span></span>' +
+      '<span class="sub"></span>';
+    host.appendChild(d);
+    d.querySelector("label").innerHTML = '<span class="tag ' + g.tag + '">' + (g.tag === "keep" ? "behouden" : "vermijden") + '</span>' + esc(g.q);
+    d.querySelector(".sub").textContent = g.d;
+    const inp = d.querySelector("input");
+    inp.value = scores[g.rules[0]];
+    $("v" + k).textContent = scores[g.rules[0]];
+    inp.addEventListener("input", () => {
+      const v = parseInt(inp.value, 10);
+      g.rules.forEach(r => { scores[r] = v; });
+      $("v" + k).textContent = v;
+      if (lastStatus) { renderCompare(lastStatus); updateLive(lastStatus); }
+    });
+  });
+}
+function setSliders() {
+  syncGroups();
+  GROUPS.forEach((g, k) => { const el = $("s" + k); if (el) { el.value = scores[g.rules[0]]; $("v" + k).textContent = scores[g.rules[0]]; } });
+  if (lastStatus) { renderCompare(lastStatus); updateLive(lastStatus); }
+}
+
+// Telling per regel (aantal keer dat het voorkomt) en een rij per slider-groep
+const cnt = (j, i, w) => Math.abs(j.rules.filter(r => r.kind === "soft")[i][w]) / j.unit[i];
+function groupRow(j, g) {
+  const f = r => [cnt(j, r, "base"), cnt(j, r, "best")];
+  if (g.rules.length === 1) {
+    const [nb, nn] = f(g.rules[0]), d = nn - nb;
+    const state = d < -0.05 ? "good" : d > 0.05 ? "bad" : "same";
+    return { now: f1(nb) + " " + j.noun[g.rules[0]], new: f1(nn), state };
+  }
+  const [hb, hn] = f(4), [fb, fn] = f(9);
+  const better = hn < hb - 0.05 || fn > fb + 0.05, worse = hn > hb + 0.05 || fn < fb - 0.05;
+  return { now: f1(hb) + " halve en " + f1(fb) + " vrije weekends", new: f1(hn) + " halve en " + f1(fn) + " vrije",
+    state: better && !worse ? "good" : worse && !better ? "bad" : better && worse ? "mix" : "same" };
+}
+const STATE_TXT = { good: "▲ beter", bad: "▼ slechter", same: "=", mix: "± gemengd" };
+
+function body(extra) {
+  return Object.entries(extra).map(([k, v]) => k + "=" + v).join("\n") + "\n---\n" + $("series").value + "\n";
+}
+async function post(url, text) {
+  const r = await fetch(url, { method: "POST", body: text });
+  return r;
+}
+
+async function check(clear = true) {
+  if (clear) $("seriesErr").textContent = "";
+  const r = await post("/api/check", body({ scores: scores.join(","), forbidHalf: forbidHalf() ? 1 : 0, forbidConsec: forbidConsec() ? 1 : 0 }));
+  const j = await r.json();
+  handle(j);
+}
+
+async function start() {
+  $("runErr").textContent = "";
+  const extra = { scores: scores.join(","), seconds: $("seconds").value, from: $("from").value, forbidHalf: forbidHalf() ? 1 : 0, forbidConsec: forbidConsec() ? 1 : 0 };
+  if ($("threads").value) extra.threads = $("threads").value;
+  const r = await post("/api/start", body(extra));
+  const j = await r.json();
+  if (j.error) { $("runErr").textContent = j.error; return; }
+  poll();
+}
+
+async function stop() { await post("/api/stop", ""); }
+
+async function poll() {
+  const r = await fetch("/api/status");
+  const j = await r.json();
+  handle(j);
+  clearTimeout(timer);
+  if (j.state === "running") timer = setTimeout(poll, 1000);
+}
+
+function handle(j) {
+  if (j.error && j.state !== "error") { $("seriesErr").style.color = ""; $("seriesErr").textContent = j.error; }
+  if (j.state === "error") $("runErr").textContent = j.error || "Onbekende fout";
+  lastStatus = j.rules ? j : lastStatus;
+  const st = $("state");
+  const names = { idle: "klaar", running: "bezig…", done: "klaar", error: "fout" };
+  st.textContent = names[j.state] || j.state;
+  st.className = "chip " + (j.state === "running" ? "running" : j.state === "done" ? "done" : j.state === "error" ? "error" : "");
+  const running = j.state === "running";
+  $("btnStart").disabled = running; $("btnStop").disabled = !running;
+  $("bar").style.width = running ? Math.min(100, 100 * j.elapsed / j.seconds) + "%" : (j.state === "done" ? "100%" : "0");
+  if (!j.rules) return;
+  if (!$("sliders").children.length) buildSliders(j.rules.filter(r => r.kind === "soft").map(r => r.name));
+  renderValidation(j);
+  renderCompare(j);
+  renderCalendar(j);
+  $("txtCard").style.display = "";
+  $("txt").textContent = j.text;
+  updateLive(j);
+}
+
+// Hinderindex: som van (belang x aantal voorkomens). Origineel = 100.
+function weighted(j) {
+  let b = 0, n = 0;
+  j.rules.filter(r => r.kind === "soft").forEach((r, i) => {
+    const w = importance(scores[i]);
+    b += w * r.base / j.unit[i];
+    n += w * r.best / j.unit[i];
+    if (i === 9) { b += w * j.validation.weeks; n += w * j.validation.weeks; }   // beloning: tel gemiste weekends
+  });
+  return { base: b, best: n };
+}
+function updateLive(j) {
+  const w = weighted(j);
+  if (j.state === "idle" && !(w.best > 0)) { $("liveScore").textContent = ""; return; }
+  const idx = w.base > 0 ? 100 * w.best / w.base : 100;
+  $("liveScore").textContent = "hinderindex 100 → " + idx.toFixed(0);
+}
+
+function renderValidation(j) {
+  const v = j.validation;
+  $("valCard").style.display = "";
+  const k = (val, label) => '<div class="kpi"><b>' + val + '</b><span>' + label + '</span></div>';
+  $("kpis").innerHTML =
+    k(v.weeks, "weken") + k(v.services, "diensten") + k(v.avg, "gem. dienstduur") +
+    k(v.CY, "CY") + k(v.RH, "RH") + k(v.RH_CH, "RH/CH") + k(v.CH, "CH") + k(v.RR, "RR") + k(v.CV, "CV") + k(v.RR_CV, "RR/CV") +
+    k(v.weekendsBothRest, "weekends za+zo rust") + k(v.weekendsQualifying, "vrij weekend (kwalificerend)") +
+    k(v.shortestRest, "kortste rust") + k(v.hardTotal, "harde overtredingen origineel");
+  $("valNote").textContent = "“za+zo rust” komt overeen met het WE-aantal in de PDF; “kwalificerend” sluit CY uit en eist ≥ 58 u rust met de uurgrenzen van bundel 541. Controleer het aantal diensten en de gemiddelde duur met je PDF.";
+}
+
+function cls(delta, lowerBetter) {
+  if (Math.abs(delta) < 0.05) return "same";
+  return (delta < 0) === lowerBetter ? "better" : "worse";
+}
+const f1 = x => (Math.round(x * 10) / 10).toString().replace(".", ",");
+
+function renderCompare(j) {
+  $("cmpCard").style.display = "";
+  const soft = j.rules.filter(r => r.kind === "soft");
+  const hard = j.rules.filter(r => r.kind === "hard");
+  const w = weighted(j);
+  const idx = w.base > 0 ? 100 * w.best / w.base : 100;
+  const pct = Math.round(idx - 100);
+  const hardBad = hard.filter(r => r.enabled !== false && r.best > 0);
+  let h = '<div class="kpis" style="margin-bottom:12px">' +
+    '<div class="kpi"><b>' + Math.round(idx) + '</b><span>hinderindex (origineel = 100, lager is beter)</span></div>' +
+    '<div class="kpi"><b style="color:var(--' + (pct < 0 ? "good" : pct > 0 ? "bad" : "muted") + ')">' + (pct > 0 ? "+" : "") + pct + ' %</b><span>t.o.v. de originele reeks</span></div>' +
+    '<div class="kpi"><b style="color:var(--' + (hardBad.length ? "bad" : "good") + ')">' + (hardBad.length ? hardBad.length + " overtreding(en)" : "alles in orde") + '</b><span>verplichte regels</span></div></div>';
+  h += '<table><tr><th>Wat</th><th>belang</th><th>nu</th><th>voorstel</th><th></th></tr>';
+  GROUPS.forEach(g => {
+    const row = groupRow(j, g), off = scores[g.rules[0]] === 0;
+    const c = row.state === "good" ? "better" : row.state === "bad" ? "worse" : "same";
+    h += '<tr style="' + (off ? "opacity:.45" : "") + '"><td>' + esc(g.q) + '</td><td>' + lvl(scores[g.rules[0]]) + '</td><td>' + esc(row.now) +
+      '</td><td class="' + c + '">' + esc(row.new) + '</td><td class="' + c + '">' + STATE_TXT[row.state] + '</td></tr>';
+  });
+  h += '</table>';
+  h += '<div class="hint" style="margin-top:8px">Kortste rust tussen twee diensten: ' + hm(j.shortestRest.base) + ' nu, ' + hm(j.shortestRest.best) + ' in het voorstel.</div>';
+  h += '<details style="margin-top:10px"><summary>Verplichte regels (aantal overtredingen)</summary><table>';
+  hard.forEach(r => {
+    const off = r.enabled === false;
+    h += '<tr><td>' + esc(r.name) + (off ? ' (uit)' : '') + '</td><td>' + r.base + '</td><td class="' + (r.best > 0 && !off ? "worse" : "same") + '">' + r.best + '</td></tr>';
+  });
+  h += '</table></details>';
+  h += '<details style="margin-top:6px"><summary>Technische details (ruwe strafpunten per regel)</summary><table><tr><th>regel</th><th>nu</th><th>voorstel</th></tr>';
+  soft.forEach((r, i) => { h += '<tr><td>' + esc(r.name) + '</td><td>' + r.base.toFixed(1) + '</td><td>' + r.best.toFixed(1) + '</td></tr>'; });
+  h += '</table></details>';
+  $("cmp").innerHTML = h;
+  $("msgs").innerHTML = j.messages && j.messages.length ? "<b>Overtredingen in het voorstel:</b><br>" + j.messages.map(esc).join("<br>") : "";
+}
+
+function hm(min) { return Math.floor(min / 60) + ":" + String(min % 60).padStart(2, "0"); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function shiftClass(c) {
+  if (c.k !== "SERVICE") return c.k;
+  const m = c.m0;
+  let k = m < 300 ? "early" : m < 480 ? "morning" : m < 780 ? "dayc" : m < 960 ? "after" : m < 1080 ? "latec" : "nightc";
+  if (c.m1 > 1440) k += " endlate";
+  return k;
+}
+
+function renderCalendar(j) {
+  $("calCard").style.display = "";
+  const g = view === "best" ? j.grid : j.orig;
+  const wk = view === "best" ? j.weekSoftBest : j.weekSoftBase;
+  const maxW = Math.max(1, ...wk);
+  let h = '<tr><th></th><th>ma</th><th>di</th><th>wo</th><th>do</th><th>vr</th><th>za</th><th>zo</th><th>uren</th><th>straf</th></tr>';
+  g.forEach((row, w) => {
+    let mins = 0;
+    h += '<tr><td class="wk">' + (w + 1) + '</td>';
+    row.forEach(c => {
+      if (c.k === "SERVICE") mins += c.d;
+      const moved = view === "best" && c.moved;
+      const label = c.k === "SERVICE" ? '<b>' + esc(c.c) + '</b>' + esc(c.s) + '–' + esc(c.e) : '<b>' + esc(c.c) + '</b>';
+      h += '<td><div class="cell ' + shiftClass(c) + (moved ? " moved" : "") + '" data-from="' + (moved ? c.from : "") + '" title="' +
+        (c.k === "SERVICE" ? esc(c.c) + " " + esc(c.s) + "–" + esc(c.e) + " (" + hm(c.d) + ")" : esc(c.c)) + '">' + label + '</div></td>';
+    });
+    const hours = mins / 60;
+    h += '<td class="hours ' + (hours > 50 ? "over" : hours > 42 ? "hi" : "") + '">' + Math.floor(mins / 60) + ":" + String(mins % 60).padStart(2, "0") + '</td>';
+    const sc = Math.max(0, wk[w]);
+    const alpha = Math.min(1, sc / maxW);
+    h += '<td class="hours" style="color:' + (alpha > 0.66 ? "var(--bad)" : alpha > 0.33 ? "var(--warn)" : "var(--good)") + '">' + sc.toFixed(0) + '</td></tr>';
+  });
+  $("cal").innerHTML = h;
+}
+
+// ---------- PDF-export (via afdrukvenster van de browser: kies "Opslaan als PDF") ----------
+function weekMinutes(grid) { return grid.map(row => row.reduce((a, c) => a + (c.k === "SERVICE" ? c.d : 0), 0)); }
+const hmin = m => Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0");
+
+function buildPrint(j) {
+  const soft = j.rules.filter(r => r.kind === "soft"), hard = j.rules.filter(r => r.kind === "hard");
+  const w = weighted(j), idx = w.base > 0 ? 100 * w.best / w.base : 100, pct = Math.round(idx - 100);
+  const today = new Date().toLocaleDateString("nl-BE", { day: "numeric", month: "long", year: "numeric" });
+  const v = j.validation;
+  const wmB = weekMinutes(j.orig), wmN = weekMinutes(j.grid);
+  const hardBad = hard.filter(r => r.enabled !== false && r.best > 0);
+  const tdCal = c => {
+    const t = c.k === "SERVICE" ? esc(c.c) + " " + esc(c.s) + "–" + esc(c.e) : esc(c.c);
+    return '<td class="' + shiftClass(c) + (c.moved ? " moved" : "") + '">' + t + '</td>';
+  };
+  const calRows = j.grid.map((row, i) => {
+    const m = wmN[i];
+    return '<tr><td class="wk">' + (i + 1) + '</td>' + row.map(tdCal).join("") + '<td class="hrs ' + (m > 3000 ? "over" : m > 2520 ? "hi" : "") + '">' + hmin(m) + '</td></tr>';
+  }).join("");
+  const legend = '<div class="legend"><i style="background:var(--early)"></i>start &lt; 05:00<i style="background:var(--morning)"></i>05:00–08:00<i style="background:var(--day)"></i>08:00–13:00<i style="background:var(--after)"></i>13:00–16:00' +
+    '<i style="background:var(--late)"></i>16:00–18:00<i style="background:var(--night)"></i>start ≥ 18:00<i style="background:var(--rest)"></i>RH/RR<i style="background:var(--restc)"></i>CH/CV<i style="background:var(--resty)"></i>CY' +
+    ' &nbsp; · &nbsp; rode onderlijn = einde na 00:00 &nbsp; · &nbsp; gestippeld = verplaatst t.o.v. de originele reeks &nbsp; · &nbsp; uren per week (oranje &gt; 42 u, rood &gt; 50 u)</div>';
+
+  let p1 = '<div class="pp"><h1>Reeksvoorstel</h1><div class="sub">' + today + ' · ' + v.weeks + ' weken · ' + v.services + ' diensten · gemiddelde dienstduur ' + esc(v.avg) +
+    ' · hinderindex 100 → ' + Math.round(idx) + ' (' + (pct > 0 ? "+" : "") + pct + ' %)</div>' +
+    '<table class="pcal"><tr><th>wk</th><th>ma</th><th>di</th><th>wo</th><th>do</th><th>vr</th><th>za</th><th>zo</th><th>uren</th></tr>' + calRows + '</table>' + legend + '</div>';
+
+  const rowsSoft = GROUPS.map(g => {
+    const row = groupRow(j, g), c = row.state === "good" ? "good" : row.state === "bad" ? "bad" : "mut";
+    return '<tr><td>' + esc(g.q) + '</td><td>' + lvl(scores[g.rules[0]]) + '</td><td class="n">' + esc(row.now) + '</td><td class="n ' + c + '">' + esc(row.new) + '</td><td class="' + c + '">' + STATE_TXT[row.state] + '</td></tr>';
+  }).join("");
+  const p2 = '<div class="pp"><h1>Rapport: wat is er verbeterd?</h1><div class="sub">Belang zoals ingesteld (cijfer 1–10); “nu” en “voorstel” = hoe vaak het voorkomt in de reeks.</div>' +
+    '<div class="kp"><b>100 → ' + Math.round(idx) + '</b><span>hinderindex (lager is beter)</span></div>' +
+    '<div class="kp"><b class="' + (pct < 0 ? "good" : pct > 0 ? "bad" : "mut") + '">' + (pct > 0 ? "+" : "") + pct + ' %</b><span>t.o.v. de originele reeks</span></div>' +
+    '<div class="kp"><b class="' + (hardBad.length ? "bad" : "good") + '">' + (hardBad.length ? hardBad.length + " overtreding(en)" : "alles in orde") + '</b><span>verplichte regels (14 u rust, 50 u per week, …)</span></div>' +
+    '<div class="kp"><b>' + j.free.base + ' → ' + j.free.best + '</b><span>kwalificerende vrije weekends</span></div>' +
+    '<div class="kp"><b>' + hm(j.shortestRest.base) + ' → ' + hm(j.shortestRest.best) + '</b><span>kortste rust tussen diensten</span></div>' +
+    '<table><tr><th>Wat</th><th>belang</th><th class="n">nu</th><th class="n">voorstel</th><th></th></tr>' + rowsSoft + '</table>' +
+    '<div class="sub" style="margin-top:3mm">Halve weekends uitgesloten: ' + (j.forbidHalf ? "ja" : "nee") + '; twee weekends na elkaar uitgesloten: ' + (j.forbidConsec ? "ja" : "nee") + '. Verplichte regels worden altijd gerespecteerd; het voorstel is niet bewezen optimaal.</div></div>';
+
+  const moved = j.grid.map((row, i) => row.map((c, k) => c.moved ? "R" + (k + 1) + " ← w" + c.from : null).filter(Boolean));
+  const heaviest = j.weekSoftBest.map((x, i) => [x, i]).sort((a, b) => b[0] - a[0]).slice(0, 5).map(a => "week " + (a[1] + 1)).join(", ");
+  const wkRows = j.grid.map((row, i) => '<tr><td>' + (i + 1) + '</td><td class="n" style="white-space:nowrap">' + hmin(wmB[i]) + ' → ' + hmin(wmN[i]) + '</td><td class="n" style="white-space:nowrap">' + Math.max(0, j.weekSoftBase[i]).toFixed(0) + ' → ' +
+    Math.max(0, j.weekSoftBest[i]).toFixed(0) + '</td><td class="mut">' + (moved[i].length ? moved[i].join("   ") : "ongewijzigd") + '</td></tr>').join("");
+  const p3 = '<div class="pp"><h1>Detail per week</h1><div class="sub">Zwaarste weken in het voorstel: ' + heaviest + '. “zwaarte” = ruwe hinder in die week (lager is beter).</div>' +
+    '<table class="dense"><tr><th>wk</th><th class="n" style="white-space:nowrap">uren nu → voorstel</th><th class="n" style="white-space:nowrap">zwaarte nu → voorstel</th><th>cellen die hier nu staan, afkomstig uit week …</th></tr>' + wkRows + '</table></div>';
+
+  const p4 = '<div class="pp"><h1>Nieuwe reeks als tekst</h1><div class="sub">Eén regel per week: week;R1;…;R7. Kan opnieuw ingelezen worden in de optimalisatie.</div><pre>' + esc(j.text) + '</pre>' +
+    '<div class="sub" style="margin-top:4mm">Niet gemodelleerd: 12 u i.p.v. 14 u bij vertraging, kwartaalgrens 520 u, exacte kalendertellers per maand, bevoegdheden en lijnkennis, verlof en feestdagen. Controleer het voorstel altijd met de officiële planningssoftware.</div></div>';
+  return p1 + p2 + p3 + p4;
+}
+
+function exportPdf() {
+  if (!lastStatus || !lastStatus.grid) return;
+  $("printRoot").innerHTML = buildPrint(lastStatus);
+  const old = document.title;
+  document.title = "Reeksvoorstel " + new Date().toISOString().slice(0, 10);
+  const restore = () => { document.title = old; window.removeEventListener("afterprint", restore); };
+  window.addEventListener("afterprint", restore);
+  window.print();
+}
+$("btnPdf").onclick = exportPdf;
+$("btnPdf2").onclick = exportPdf;
+
+async function loadDefault() {
+  const r = await fetch("/api/default");
+  $("series").value = await r.text();
+  await check();
+}
+
+$("btnDefault").onclick = loadDefault;
+$("btnCheck").onclick = check;
+$("btnStart").onclick = start;
+$("btnStop").onclick = stop;
+$("btnReset").onclick = () => { scores = DEFAULT_SCORES.slice(); setSliders(); };
+$("btnAll5").onclick = () => { scores = scores.map(() => 5); setSliders(); };
+$("btnFile").onclick = () => $("file").click();
+$("file").onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  $("seriesErr").textContent = "";
+  try {
+    if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
+      await loadScript("/vendor/pdf.min.js");
+      await loadScript("/pdfimport.js");
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+      const r = await window.pdfToSeries(window.pdfjsLib, await f.arrayBuffer());
+      $("series").value = r.text;
+      $("seriesErr").style.color = "var(--muted)";
+      $("seriesErr").textContent = "PDF ingelezen: " + r.weeks + " weken, " + r.services + " diensten. Vergelijk met de samenvatting in je PDF.";
+    } else {
+      $("series").value = await f.text();
+      $("seriesErr").style.color = "";
+    }
+    await check(false);
+  } catch (err) {
+    $("seriesErr").style.color = "";
+    $("seriesErr").textContent = "Inlezen mislukt: " + err.message;
+  }
+};
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if ([...document.scripts].some(s => s.src.endsWith(src))) return res();
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error(src + " kon niet geladen worden"));
+    document.head.appendChild(s);
+  });
+}
+$("btnCopy").onclick = () => navigator.clipboard.writeText($("txt").textContent);
+$("btnUse").onclick = async () => { $("series").value = $("txt").textContent; $("from").value = "original"; await check(); };
+$("vBest").onclick = () => { view = "best"; $("vBest").className = "on"; $("vOrig").className = ""; if (lastStatus) renderCalendar(lastStatus); };
+$("vOrig").onclick = () => { view = "orig"; $("vOrig").className = "on"; $("vBest").className = ""; if (lastStatus) renderCalendar(lastStatus); };
+
+// opstart: bouw sliders met bekende namen, laad status (server onthoudt de laatste reeks) of het voorbeeld
+buildSliders();
+fetch("/api/status").then(r => r.json()).then(j => {
+  if (j.rules && j.series) { $("series").value = j.series; handle(j); if (j.state === "running") poll(); }
+  else loadDefault();
+});
+</script>
+</body>
+</html>
