@@ -18,8 +18,8 @@ public final class Evaluator {
         public int freeWeekends;            // kwalificerende vrije weekends
         public int shortestRestMin = Integer.MAX_VALUE;
 
-        /** Som van de verplichte harde regels (H15 en H16 zijn optioneel en tellen hier niet mee). */
-        public long hardTotal() { long t = 0; for (int i = 0; i < hard.length; i++) if (i != 12 && i != 13) t += hard[i]; return t; }
+        /** Som van de verplichte harde regels (de optionele "nooit"-regels tellen hier niet mee). */
+        public long hardTotal() { long t = 0; for (int i = 0; i < hard.length; i++) if (i < Rules.HM) t += hard[i]; return t; }
     }
 
     private static final int W36 = 36 * 60, C34 = 34 * 60, Y38 = 38 * 60;
@@ -52,7 +52,7 @@ public final class Evaluator {
         for (int w = 0; w < WK; w++) {
             if (weekMin[w] > 50 * 60) { r.hard[1]++; msg(r, "H2", w, "week " + (w + 1) + " heeft " + fmt(weekMin[w]) + " u"); }
             double h = weekMin[w] / 60.0;
-            if (h > 42) { double v = 1.5 * (h - 42) * (h - 42); r.soft[3] += v; wk(r, w, v); }
+            if (h > 42) { double v = 1.5 * (h - 42) * (h - 42); r.soft[3] += v; wk(r, w, v); r.hard[Rules.never(3)]++; msg(r, "N4", w, "week " + (w + 1) + " is zwaarder dan 42 u (" + fmt(weekMin[w]) + ")"); }
         }
         int win = 0;
         for (int d = 0; d < 7; d++) win += du[d];
@@ -122,6 +122,7 @@ public final class Evaluator {
                 double z9 = 0;
                 if (len == 4) z9 = 3; else if (len >= 5) z9 = 8 + 25.0 * (len - 5);
                 if (z9 > 0) { r.soft[8] += z9; wk(r, sd / 7, z9); }
+                if (len >= 5) { r.hard[Rules.never(8)]++; msg(r, "N9", sd / 7, len + " werkdagen na elkaar vanaf week " + (sd / 7 + 1)); }
                 // Z6 / Z7 runs
                 int runE = 0, runL = 0;
                 for (int k = 0; k < len; k++) {
@@ -144,9 +145,11 @@ public final class Evaluator {
             if (en[d] > 1500) v7 += 1;
             if (en[d] > 1530) v7 += 1;
             if (v7 > 0) { r.soft[6] += v7; wk(r, d / 7, v7); }
-            // Z11
+            // paren op aansluitende dagen
             int nx = (d + 1) % N;
-            if (svc[nx] && du[d] >= 510 && du[nx] >= 510) { r.soft[10] += 1; wk(r, d / 7, 1); }
+            if (svc[nx] && st[d] < 300 && st[nx] < 300) { r.hard[Rules.never(5)]++; msg(r, "N6", d / 7, "twee vroege starts na elkaar rond week " + (d / 7 + 1)); }
+            if (svc[nx] && en[d] > 1440 && en[nx] > 1440) { r.hard[Rules.never(6)]++; msg(r, "N7", d / 7, "twee late einden na elkaar rond week " + (d / 7 + 1)); }
+            if (svc[nx] && du[d] >= 510 && du[nx] >= 510) { r.soft[10] += 1; wk(r, d / 7, 1); r.hard[Rules.never(10)]++; msg(r, "N11", d / 7, "twee lange diensten na elkaar rond week " + (d / 7 + 1)); }
         }
         // Z2 : vensters van 7 en 8 dagen
         int c7 = 0, c8 = 0;
@@ -157,6 +160,7 @@ public final class Evaluator {
             if (c7 == 6) v += 6; else if (c7 == 7) v += 20;
             if (c8 >= 7) v += 14;
             if (v > 0) { r.soft[1] += v; wk(r, s / 7, v); }
+            if (c7 >= 6) { r.hard[Rules.never(1)]++; msg(r, "N2", s / 7, c7 + " diensten in 7 dagen vanaf week " + (s / 7 + 1)); }
             if (svc[s]) { c7--; c8--; }
             if (svc[(s + 7) % N]) c7++;
             if (svc[(s + 8) % N]) c8++;
@@ -164,14 +168,14 @@ public final class Evaluator {
         // Z3 : twee W-rustdagen naast elkaar
         for (int d = 0; d < N; d++) {
             int nx = (d + 1) % N;
-            if (!svc[d] && !svc[nx] && rc[d] == 0 && rc[nx] == 0) { r.soft[2] += 2; wk(r, d / 7, 2); }
+            if (!svc[d] && !svc[nx] && rc[d] == 0 && rc[nx] == 0) { r.soft[2] += 2; wk(r, d / 7, 2); r.hard[Rules.never(2)]++; msg(r, "N3", d / 7, "twee W-rustdagen naast elkaar in week " + (d / 7 + 1)); }
         }
         // Z5 halve weekends, qualifying weekends
         boolean[] free = new boolean[WK];
         int nFree = 0;
         for (int w = 0; w < WK; w++) {
             int sat = w * 7 + 5, sun = w * 7 + 6;
-            if (svc[sat] != svc[sun]) { r.soft[4] += 14; r.hard[12]++; wk(r, w, 14); msg(r, "H15", w, "half weekend in week " + (w + 1)); }
+            if (svc[sat] != svc[sun]) { r.soft[4] += 14; r.hard[Rules.never(4)]++; wk(r, w, 14); msg(r, "N5", w, "half weekend in week " + (w + 1)); }
             free[w] = qualifies(p, w, N, svc, st, en, rc, kd);
             if (free[w]) nFree++;
         }
@@ -180,7 +184,7 @@ public final class Evaluator {
             boolean[] worked = new boolean[WK];
             int firstOff = -1;
             for (int w = 0; w < WK; w++) { worked[w] = svc[w * 7 + 5] || svc[w * 7 + 6]; if (!worked[w] && firstOff < 0) firstOff = w; }
-            if (firstOff < 0) { double v = 8.0 * (WK - 1) * (WK - 1); r.soft[11] += v; r.hard[13] += WK; }
+            if (firstOff < 0) { double v = 8.0 * (WK - 1) * (WK - 1); r.soft[11] += v; r.hard[Rules.never(11)] += WK; }
             else {
                 int i = 1;
                 while (i <= WK) {
@@ -191,8 +195,8 @@ public final class Evaluator {
                     int len = j - i;
                     if (len >= 2) {
                         double v = 8.0 * (len - 1) * (len - 1); r.soft[11] += v; wk(r, (firstOff + j - 1) % WK, v);
-                        r.hard[13] += len - 1;
-                        msg(r, "H16", (firstOff + j - 1) % WK, len + " weekends na elkaar gewerkt, eindigend in week " + ((firstOff + j - 1) % WK + 1));
+                        r.hard[Rules.never(11)] += len - 1;
+                        msg(r, "N12", (firstOff + j - 1) % WK, len + " weekends na elkaar gewerkt, eindigend in week " + ((firstOff + j - 1) % WK + 1));
                     }
                     i = j;
                 }
@@ -309,12 +313,19 @@ public final class Evaluator {
         if (dh > 0) z1 += Math.pow(Math.max(0, dh - 2.5 * gapDays), 1.5);
         else if (dh < 0) z1 += 1.5 * Math.pow(Math.max(0, -dh - 1.2 * gapDays), 1.7);
         if (z1 > 0) { r.soft[0] += z1; wk(r, wp, z1); }
+        // vroeg / dag / laat op basis van het beginuur; Z13 (blokken) en N13
+        int cp = st[pp] < 480 ? 0 : st[pp] >= 780 ? 2 : 1, cn = st[nn] < 480 ? 0 : st[nn] >= 780 ? 2 : 1;
+        boolean direct = (cp == 0 && cn == 2) || (cp == 2 && cn == 0);
+        if (cp != cn) { double v = direct ? 3 : 1; r.soft[12] += v; wk(r, wp, v); }
+        if (direct) { r.hard[Rules.never(12)]++; msg(r, "N13", wp, "rechtstreeks van " + (cp == 0 ? "vroege naar late" : "late naar vroege") + " dienst, week " + (wp + 1)); }
+        if (k == 1 && direct) { r.hard[Rules.never(0)]++; msg(r, "N1", wp, "vroeg/laat-omschakeling met één rustdag, week " + (wp + 1)); }
 
         // Z8
         if (gap < 15 * 60) {
             double v = gap < 14 * 60 + 30 ? 2 : 1;
             if (st[nn] < 300) v += 2;
             r.soft[7] += v; wk(r, wp, v);
+            r.hard[Rules.never(7)]++; msg(r, "N8", wp, "rust van " + fmt(gap) + " u na " + dayName(pp));
         }
         if (k <= 0) return;
 
@@ -336,7 +347,7 @@ public final class Evaluator {
             if (st[nn] < START_LIMIT[rcL]) { r.hard[4]++; msg(r, "H5", wp, "dienst begint " + Cell.hhmm(st[nn]) + " na rustblok in week " + (wp + 1)); }
         }
         if (rcL == 2 && du[nn] > 8 * 60) { r.hard[5]++; msg(r, "H7", wp, "dienst na CY duurt " + fmt(du[nn]) + " u (week " + (nn / 7 + 1) + ")"); }
-        if (k == 3) { r.soft[2] += 3; wk(r, wp, 3); }
+        if (k == 3) { r.soft[2] += 3; wk(r, wp, 3); r.hard[Rules.never(2)]++; msg(r, "N3", wp, "rustblok van 3 dagen in week " + (wp + 1)); }
     }
 
     private static void wk(Result r, int w, double v) { if (r.weekSoft != null) r.weekSoft[w] += v; }

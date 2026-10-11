@@ -20,7 +20,7 @@ def load(path):
 REST_CLASS={'RH':0,'RR':0,'RH/CH':0,'RR/CV':0,'CH':1,'CV':1,'CY':2}
 def evaluate(cells,grid):
     N=len(grid);W=N//7
-    H=[0]*14;Z=[0.0]*12
+    H=[0]*25;Z=[0.0]*13
     D=[cells[grid[d%N]] for d in range(3*N)]    # 3 maal uitgerold
     mid=range(N,2*N)
     isS=lambda d:D[d]['kind']=='S'
@@ -29,7 +29,7 @@ def evaluate(cells,grid):
     for w in range(W):
         h=sum(D[N+w*7+i]['d'] for i in range(7))
         if h>3000:H[1]+=1
-        if h/60>42:Z[3]+=1.5*(h/60-42)**2
+        if h/60>42:Z[3]+=1.5*(h/60-42)**2;H[12+3]+=1
     for s in mid:
         h=sum(D[s+i]['d'] for i in range(7))/60
         if h>42:Z[3]+=0.1*(h-42)**2
@@ -47,7 +47,14 @@ def evaluate(cells,grid):
         if dh>0:z1+=max(0,dh-2.5*(n-p))**1.5
         if dh<0:z1+=1.5*max(0,-dh-1.2*(n-p))**1.7
         Z[0]+=z1
+        cl=lambda x:0 if x<480 else 2 if x>=780 else 1
+        cp_,cn_=cl(D[p]['s']),cl(D[n]['s'])
+        direct=(cp_==0 and cn_==2) or (cp_==2 and cn_==0)
+        if cp_!=cn_:Z[12]+=3 if direct else 1
+        if direct:H[12+12]+=1
+        if k==1 and direct:H[12+0]+=1
         if gap<900:
+            H[12+7]+=1
             Z[7]+=(2 if gap<870 else 1)+(2 if D[n]['s']<300 else 0)
         if k>0:
             cls=[rc(x) for x in range(p+1,n)]
@@ -58,7 +65,7 @@ def evaluate(cells,grid):
                 if D[p]['e']>[1200,1380,1500][cls[0]]:H[3]+=1
                 if D[n]['s']<[360,300,180][cls[-1]]:H[4]+=1
             if cls[-1]==2 and D[n]['d']>480:H[5]+=1
-            if k==3:Z[2]+=3
+            if k==3:Z[2]+=3;H[12+2]+=1
     # H9
     for d in mid:
         if not isS(d) and rc(d)==0:
@@ -74,7 +81,7 @@ def evaluate(cells,grid):
             night=[D[s+i]['s']<240 or D[s+i]['e']>1380 for i in range(L)]
             if L>5 and any(all(night[i:i+5]) for i in range(L-4)):H[8]+=1
             if L==4:Z[8]+=3
-            if L>=5:Z[8]+=8+25*(L-5)
+            if L>=5:Z[8]+=8+25*(L-5);H[12+8]+=1
             r=0
             for i in range(L+1):
                 if i<L and D[s+i]['s']<300:r+=1
@@ -92,9 +99,12 @@ def evaluate(cells,grid):
             s=D[d]['s'];e=D[d]['e']
             Z[5]+=3 if s<240 else 2 if s<270 else 1 if s<300 else 0
             Z[6]+=(2 if e>1440 else 0)+(1 if e>1500 else 0)+(1 if e>1530 else 0)
-            if isS(d+1) and D[d]['d']>=510 and D[d+1]['d']>=510:Z[10]+=1
-        if not isS(d) and not isS(d+1) and rc(d)==0 and rc(d+1)==0:Z[2]+=2
+            if isS(d+1) and D[d]['d']>=510 and D[d+1]['d']>=510:Z[10]+=1;H[12+10]+=1
+            if isS(d+1) and D[d]['s']<300 and D[d+1]['s']<300:H[12+5]+=1
+            if isS(d+1) and D[d]['e']>1440 and D[d+1]['e']>1440:H[12+6]+=1
+        if not isS(d) and not isS(d+1) and rc(d)==0 and rc(d+1)==0:Z[2]+=2;H[12+2]+=1
         c7=sum(isS(d+i) for i in range(7));c8=sum(isS(d+i) for i in range(8))
+        if c7>=6:H[12+1]+=1
         if c7==6:Z[1]+=6
         if c7==7:Z[1]+=20
         if c8>=7:Z[1]+=14
@@ -103,7 +113,7 @@ def evaluate(cells,grid):
     for w in range(W):
         sat=N+w*7+5;sun=sat+1
         if isS(sat)!=isS(sun):
-            Z[4]+=14;H[12]+=1
+            Z[4]+=14;H[12+4]+=1
         ok=False
         if not isS(sat) and not isS(sun) and D[sat]['kind']!='CY' and D[sun]['kind']!='CY':
             pd=sat-1
@@ -115,13 +125,13 @@ def evaluate(cells,grid):
         free.append(ok)
     Z[9]=-5*sum(free)
     worked=[isS(N+w*7+5) or isS(N+w*7+6) for w in range(W)]
-    if all(worked):Z[11]+=8*(W-1)**2;H[13]+=W
+    if all(worked):Z[11]+=8*(W-1)**2;H[12+11]+=W
     else:
         for w in range(W,2*W):
             if worked[w%W] and not worked[(w-1)%W]:
                 L=0
                 while worked[(w+L)%W] and L<W:L+=1
-                if L>=2:Z[11]+=8*(L-1)**2;H[13]+=L-1
+                if L>=2:Z[11]+=8*(L-1)**2;H[12+11]+=L-1
     for w in range(W):
         if not any(free[(w+k)%W] for k in range(4)):H[9]+=1
     idx=[w for w in range(W) if free[w]]

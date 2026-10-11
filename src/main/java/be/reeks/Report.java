@@ -44,6 +44,12 @@ public final class Report {
         return sb.append('}').toString();
     }
 
+    private static String neverJson(boolean[] n) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < n.length; i++) { if (i > 0) sb.append(','); sb.append(n[i]); }
+        return sb.append(']').toString();
+    }
+
     private static String grid(Series s, int[] g, int[] ref) {
         StringBuilder sb = new StringBuilder("[");
         for (int w = 0; w < s.weeks; w++) {
@@ -66,9 +72,9 @@ public final class Report {
     }
 
     public static String status(Series s, int[] scores, SolveJob job, String seriesError, Evaluator.Result base, Evaluator.Result best,
-                                int[] bestGrid, String state, double elapsed, int seconds, String seriesText, boolean forbidHalf, boolean forbidConsec) {
+                                int[] bestGrid, String state, double elapsed, int seconds, String seriesText, boolean[] never) {
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"state\":").append(q(state)).append(",\"elapsed\":").append(num(elapsed)).append(",\"seconds\":").append(seconds).append(",\"forbidHalf\":").append(forbidHalf).append(",\"forbidConsec\":").append(forbidConsec);
+        sb.append("\"state\":").append(q(state)).append(",\"elapsed\":").append(num(elapsed)).append(",\"seconds\":").append(seconds).append(",\"never\":").append(neverJson(never));
         if (job != null && job.error != null) sb.append(",\"error\":").append(q(job.error));
         if (seriesError != null) sb.append(",\"error\":").append(q(seriesError));
         if (s == null) return sb.append('}').toString();
@@ -82,7 +88,7 @@ public final class Report {
         for (int i = 0; i < Rules.H; i++) {
             if (i > 0) sb.append(',');
             sb.append("{\"name\":").append(q(Rules.HARD[i])).append(",\"kind\":\"hard\",\"base\":").append(base.hard[i])
-              .append(",\"best\":").append(best.hard[i]).append(",\"enabled\":").append(i == 12 ? forbidHalf : i == 13 ? forbidConsec : true).append('}');
+              .append(",\"best\":").append(best.hard[i]).append(",\"enabled\":").append(i < Rules.HM || never[i - Rules.HM]).append('}');
         }
         double wb = 0, wn = 0;
         for (int i = 0; i < Rules.Z; i++) {
@@ -103,10 +109,22 @@ public final class Report {
         int shown = 0;
         for (int i = 0; best.messages != null && i < best.messages.size() && shown < 40; i++) {
             String m = best.messages.get(i);
-            if (!forbidHalf && m.startsWith("H15")) continue;
-            if (!forbidConsec && m.startsWith("H16")) continue;
+            if (m.startsWith("N")) {
+                int idx = Integer.parseInt(m.substring(1, m.indexOf(':'))) - 1;
+                if (idx < 0 || idx >= never.length || !never[idx]) continue;
+            }
             if (shown++ > 0) sb.append(',');
             sb.append(q(m));
+        }
+        sb.append("],\"conflicts\":[");
+        int nc = 0;
+        for (int i = 0; i < Rules.H; i++) {
+            boolean on = i < Rules.HM || never[i - Rules.HM];
+            if (on && best.hard[i] > 0) {
+                if (nc++ > 0) sb.append(',');
+                sb.append("{\"name\":").append(q(Rules.HARD[i])).append(",\"count\":").append(best.hard[i])
+                  .append(",\"never\":").append(i >= Rules.HM).append(",\"rule\":").append(i >= Rules.HM ? i - Rules.HM : -1).append('}');
+            }
         }
         sb.append("],\"series\":").append(q(seriesText == null ? "" : seriesText));
         sb.append(",\"text\":").append(q(s.toText(bestGrid)));

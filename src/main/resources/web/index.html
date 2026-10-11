@@ -41,6 +41,10 @@ button:disabled { opacity: .5; cursor: default; }
 .slider label { font-size: 13px; }
 .slider .val { text-align: right; font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--accent); min-width: 2.2em; }
 .slider input { grid-column: 1 / 3; width: 100%; accent-color: var(--accent); margin: 0; }
+.slider .never { grid-column: 1 / 3; font-size: 12px; margin-top: 2px; }
+.slider .never .hint { font-size: 11px; }
+#conflict { border: 1px solid var(--bad); background: rgba(192,57,43,.08); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+#conflict ul { margin: 6px 0; padding-left: 20px; }
 .tag { display: inline-block; font-size: 10px; font-weight: 650; padding: 0 6px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
 .tag.avoid { background: #fde3df; color: #b3382a; } .tag.keep { background: #dcf3e6; color: #1c7a4a; }
 @media (prefers-color-scheme: dark) { .tag.avoid { background: #4a2420; color: #ff9d90; } .tag.keep { background: #1f3d2d; color: #7fdcaa; } }
@@ -192,6 +196,7 @@ pre.out { font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: 
 
     <div class="card" id="cmpCard" style="display:none">
       <h2>Huidig versus voorstel</h2>
+      <div id="conflict" style="display:none"></div>
       <div id="cmp"></div>
       <div id="msgs" class="msgs"></div>
     </div>
@@ -230,28 +235,32 @@ pre.out { font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: 
 // Eén slider per "groep" van regels. Volgorde van regels = Z1..Z11 op de server (index 0..10).
 // Halve weekends (4) en vrije weekends (9) delen één slider.
 const GROUPS = [
-  { rules: [0], tag: "avoid", q: "Van vroege naar late dienst (of omgekeerd) met maar één rustdag ertussen", d: "Losse rustdag tussen twee diensten, vooral als het beginuur sterk verschilt" },
-  { rules: [1], tag: "avoid", q: "6 van de 7 dagen werken (of 7 van de 8)", d: "Weken waarin je bijna elke dag werkt" },
-  { rules: [2], tag: "avoid", q: "Rustblokken van 3 dagen", d: "Liever 2 vrije dagen na elkaar dan 3; ook twee W-rustdagen (RH/RR) naast elkaar" },
-  { rules: [3], tag: "avoid", q: "Zware weken (boven 42 u, richting de 50 u)", d: "Hoe dichter bij 50 u, hoe zwaarder" },
-  { rules: [4, 9], tag: "keep", q: "Volledige weekends: zaterdag én zondag samen vrij (of samen werken)", d: "Vermijdt halve weekends (één dag werken, één dag vrij) en geeft zoveel mogelijk vrije weekends. Op 10 zijn halve weekends helemaal uitgesloten." },
-  { rules: [5], tag: "avoid", q: "Heel vroege starts (voor 05:00)", d: "Vooral meerdere na elkaar" },
-  { rules: [6], tag: "avoid", q: "Late einden (na middernacht)", d: "Vooral meerdere na elkaar" },
-  { rules: [7], tag: "avoid", q: "Maar net 14 u rust tussen twee diensten", d: "Rust van 14:00 tot 15:00, zwaarder voor een vroege start erna" },
-  { rules: [8], tag: "avoid", q: "Lange werkreeksen (4 dagen of meer na elkaar)", d: "Hoe hoger je dit zet, hoe korter de reeksen: 5 dagen telt zwaarder, elke dag erboven nog veel meer" },
-  { rules: [10], tag: "avoid", q: "Twee lange diensten (8:30 of meer) na elkaar", d: "" },
-  { rules: [11], tag: "avoid", q: "Twee weekends na elkaar werken", d: "Zaterdag of zondag gewerkt in twee opeenvolgende weken; drie na elkaar telt veel zwaarder. Op 10 is het uitgesloten (lukt dat niet, dan zie je een melding)." }
+  { rules: [0], never: 0, tag: "avoid", q: "Van vroege naar late dienst (of omgekeerd) met maar één rustdag ertussen", d: "Losse rustdag tussen twee diensten, vooral als het beginuur sterk verschilt",
+    nd: "Nooit van een vroege dienst (begin vóór 08:00) naar een late (vanaf 13:00), of omgekeerd, met maar één rustdag ertussen" },
+  { rules: [12], never: 12, tag: "avoid", q: "Vroege en late diensten in blokken (weinig wisselen)", d: "Elke wissel tussen vroeg (vóór 08:00), dag en laat (vanaf 13:00) telt; rechtstreeks van vroeg naar laat telt drie keer zwaarder. Hoog = liever een paar weken vroeg, dan een paar weken laat.",
+    nd: "Nooit rechtstreeks van een vroege naar een late dienst (of omgekeerd) bij twee opeenvolgende diensten" },
+  { rules: [1], never: 1, tag: "avoid", q: "6 van de 7 dagen werken (of 7 van de 8)", d: "Weken waarin je bijna elke dag werkt", nd: "Nooit 6 of meer diensten binnen 7 dagen" },
+  { rules: [2], never: 2, tag: "avoid", q: "Rustblokken van 3 dagen", d: "Liever 2 vrije dagen na elkaar dan 3; ook twee W-rustdagen (RH/RR) naast elkaar", nd: "Nooit een rustblok van 3 dagen en nooit twee W-rustdagen naast elkaar" },
+  { rules: [3], never: 3, tag: "avoid", q: "Zware weken (boven 42 u, richting de 50 u)", d: "Hoe dichter bij 50 u, hoe zwaarder", nd: "Nooit een week boven 42 u" },
+  { rules: [4, 9], never: 4, tag: "keep", q: "Volledige weekends: zaterdag én zondag samen vrij (of samen werken)", d: "Vermijdt halve weekends (één dag werken, één dag vrij) en geeft zoveel mogelijk vrije weekends.", nd: "Nooit een half weekend (één dag werken, één dag vrij)" },
+  { rules: [11], never: 11, tag: "avoid", q: "Twee weekends na elkaar werken", d: "Zaterdag of zondag gewerkt in twee opeenvolgende weken; drie na elkaar telt veel zwaarder.", nd: "Nooit twee weekends na elkaar werken (zaterdag of zondag)" },
+  { rules: [5], never: 5, tag: "avoid", q: "Heel vroege starts (voor 05:00)", d: "Vooral meerdere na elkaar", nd: "Nooit twee starts vóór 05:00 op aansluitende dagen" },
+  { rules: [6], never: 6, tag: "avoid", q: "Late einden (na middernacht)", d: "Vooral meerdere na elkaar", nd: "Nooit twee diensten na elkaar die na middernacht eindigen" },
+  { rules: [7], never: 7, tag: "avoid", q: "Maar net 14 u rust tussen twee diensten", d: "Rust van 14:00 tot 15:00, zwaarder voor een vroege start erna", nd: "Nooit minder dan 15 u rust tussen twee diensten" },
+  { rules: [8], never: 8, tag: "avoid", q: "Lange werkreeksen (4 dagen of meer na elkaar)", d: "Hoe hoger je dit zet, hoe korter de reeksen: 5 dagen telt zwaarder, elke dag erboven nog veel meer", nd: "Nooit 5 of meer werkdagen na elkaar" },
+  { rules: [10], never: 10, tag: "avoid", q: "Twee lange diensten (8:30 of meer) na elkaar", d: "", nd: "Nooit twee diensten van 8:30 of langer op aansluitende dagen" }
 ];
 const lvl = s => s === 0 ? "uit" : s + "/10";
 function importance(s) { return s <= 0 ? 0 : Math.pow(5, (s - 5) / 2.5); }
-const DEFAULT_SCORES = [10, 8, 5, 6, 10, 5, 5, 2, 5, 8, 8, 10];
+const DEFAULT_SCORES = [10, 8, 5, 6, 10, 5, 5, 2, 5, 8, 8, 7, 7];
+const DEFAULT_NEVER = [4, 11];   // halve weekends en twee weekends na elkaar
 const $ = id => document.getElementById(id);
 let scores = DEFAULT_SCORES.slice();
 let lastStatus = null;
 let view = "best";
 let timer = null;
-const forbidHalf = () => scores[4] === 10;
-const forbidConsec = () => scores[11] === 10;
+let never = Array(13).fill(false);
+DEFAULT_NEVER.forEach(i => { never[i] = true; });
 function syncGroups() { GROUPS.forEach(g => g.rules.forEach(r => { scores[r] = scores[g.rules[0]]; })); }
 syncGroups();
 
@@ -264,13 +273,17 @@ function buildSliders() {
     d.innerHTML = '<label for="s' + k + '"></label><span class="val" id="v' + k + '"></span>' +
       '<input type="range" id="s' + k + '" min="0" max="10" step="1">' +
       '<span class="ends"><span>0 = telt niet mee</span><span>' + (g.tag === "keep" ? "10 = heel belangrijk" : "10 = absoluut vermijden") + '</span></span>' +
-      '<span class="sub"></span>';
+      '<span class="sub"></span>' +
+      '<label class="never"><input type="checkbox" id="n' + k + '"> <b>nooit toestaan</b> <span class="hint">— ' + esc(g.nd) + '</span></label>';
     host.appendChild(d);
     d.querySelector("label").innerHTML = '<span class="tag ' + g.tag + '">' + (g.tag === "keep" ? "behouden" : "vermijden") + '</span>' + esc(g.q);
     d.querySelector(".sub").textContent = g.d;
     const inp = d.querySelector("input");
     inp.value = scores[g.rules[0]];
     $("v" + k).textContent = scores[g.rules[0]];
+    const cb = $("n" + k);
+    cb.checked = never[g.never];
+    cb.addEventListener("change", () => { never[g.never] = cb.checked; });
     inp.addEventListener("input", () => {
       const v = parseInt(inp.value, 10);
       g.rules.forEach(r => { scores[r] = v; });
@@ -279,6 +292,7 @@ function buildSliders() {
     });
   });
 }
+function refreshNever() { GROUPS.forEach((g, k) => { const cb = $("n" + k); if (cb) cb.checked = never[g.never]; }); }
 function setSliders() {
   syncGroups();
   GROUPS.forEach((g, k) => { const el = $("s" + k); if (el) { el.value = scores[g.rules[0]]; $("v" + k).textContent = scores[g.rules[0]]; } });
@@ -311,14 +325,14 @@ async function post(url, text) {
 
 async function check(clear = true) {
   if (clear) $("seriesErr").textContent = "";
-  const r = await post("/api/check", body({ scores: scores.join(","), forbidHalf: forbidHalf() ? 1 : 0, forbidConsec: forbidConsec() ? 1 : 0 }));
+  const r = await post("/api/check", body({ scores: scores.join(","), never: never.map(b => b ? 1 : 0).join("") }));
   const j = await r.json();
   handle(j);
 }
 
 async function start() {
   $("runErr").textContent = "";
-  const extra = { scores: scores.join(","), seconds: $("seconds").value, from: $("from").value, forbidHalf: forbidHalf() ? 1 : 0, forbidConsec: forbidConsec() ? 1 : 0 };
+  const extra = { scores: scores.join(","), seconds: $("seconds").value, from: $("from").value, never: never.map(b => b ? 1 : 0).join("") };
   if ($("threads").value) extra.threads = $("threads").value;
   const r = await post("/api/start", body(extra));
   const j = await r.json();
@@ -405,11 +419,23 @@ function renderCompare(j) {
     '<div class="kpi"><b>' + Math.round(idx) + '</b><span>hinderindex (origineel = 100, lager is beter)</span></div>' +
     '<div class="kpi"><b style="color:var(--' + (pct < 0 ? "good" : pct > 0 ? "bad" : "muted") + ')">' + (pct > 0 ? "+" : "") + pct + ' %</b><span>t.o.v. de originele reeks</span></div>' +
     '<div class="kpi"><b style="color:var(--' + (hardBad.length ? "bad" : "good") + ')">' + (hardBad.length ? hardBad.length + " overtreding(en)" : "alles in orde") + '</b><span>verplichte regels</span></div></div>';
+  const cf = $("conflict");
+  const nev = (j.conflicts || []).filter(c => c.never), man = (j.conflicts || []).filter(c => !c.never);
+  if (j.state === "done" && (nev.length || man.length)) {
+    cf.style.display = "";
+    cf.innerHTML = '<b>Niet al je wensen zijn tegelijk haalbaar.</b> ' +
+      (nev.length ? 'De solver vond geen reeks waarin al je "nooit"-keuzes kloppen; dit voorstel overtreedt nog:<ul>' + nev.map(c => '<li>' + esc(c.name.replace(/^N\d+ /, "")) + ' (' + c.count + '×)</li>').join("") +
+        '</ul>Haal bij één of meer hiervan het vinkje "nooit toestaan" weg (dan wordt het een zachte voorkeur) of verlaag een andere wens, en probeer opnieuw. Dit is geen wiskundig bewijs, wel het beste wat de solver in deze tijd vond.' : '') +
+      (man.length ? '<br>De ingelezen reeks overtreedt zelf al verplichte regels: ' + man.map(c => esc(c.name) + ' (' + c.count + '×)').join(", ") + '.' : '') +
+      (nev.length ? '<div class="row"><button id="btnSoften">Zet deze regels op zacht</button></div>' : '');
+    const bs = $("btnSoften");
+    if (bs) bs.onclick = () => { nev.forEach(c => { never[c.rule] = false; }); refreshNever(); cf.style.display = "none"; };
+  } else cf.style.display = "none";
   h += '<table><tr><th>Wat</th><th>belang</th><th>nu</th><th>voorstel</th><th></th></tr>';
   GROUPS.forEach(g => {
     const row = groupRow(j, g), off = scores[g.rules[0]] === 0;
     const c = row.state === "good" ? "better" : row.state === "bad" ? "worse" : "same";
-    h += '<tr style="' + (off ? "opacity:.45" : "") + '"><td>' + esc(g.q) + '</td><td>' + lvl(scores[g.rules[0]]) + '</td><td>' + esc(row.now) +
+    h += '<tr style="' + (off ? "opacity:.45" : "") + '"><td>' + esc(g.q) + '</td><td>' + lvl(scores[g.rules[0]]) + (never[g.never] ? ' · nooit' : '') + '</td><td>' + esc(row.now) +
       '</td><td class="' + c + '">' + esc(row.new) + '</td><td class="' + c + '">' + STATE_TXT[row.state] + '</td></tr>';
   });
   h += '</table>';
@@ -501,7 +527,7 @@ function buildPrint(j) {
     '<div class="kp"><b>' + j.free.base + ' → ' + j.free.best + '</b><span>kwalificerende vrije weekends</span></div>' +
     '<div class="kp"><b>' + hm(j.shortestRest.base) + ' → ' + hm(j.shortestRest.best) + '</b><span>kortste rust tussen diensten</span></div>' +
     '<table><tr><th>Wat</th><th>belang</th><th class="n">nu</th><th class="n">voorstel</th><th></th></tr>' + rowsSoft + '</table>' +
-    '<div class="sub" style="margin-top:3mm">Halve weekends uitgesloten: ' + (j.forbidHalf ? "ja" : "nee") + '; twee weekends na elkaar uitgesloten: ' + (j.forbidConsec ? "ja" : "nee") + '. Verplichte regels worden altijd gerespecteerd; het voorstel is niet bewezen optimaal.</div></div>';
+    '<div class="sub" style="margin-top:3mm">' + (GROUPS.filter(g => never[g.never]).length ? 'Als "nooit" ingesteld: ' + GROUPS.filter(g => never[g.never]).map(g => esc(g.nd.replace(/^Nooit /, ""))).join("; ") + '. ' : '') + ((j.conflicts || []).some(c => c.never) ? 'LET OP: niet alle "nooit"-keuzes zijn gehaald (' + j.conflicts.filter(c => c.never).map(c => esc(c.name.replace(/^N\d+ /, "")) + " " + c.count + "×").join(", ") + '). ' : '') + 'Verplichte regels worden altijd gerespecteerd; het voorstel is niet bewezen optimaal.</div></div>';
 
   const moved = j.grid.map((row, i) => row.map((c, k) => c.moved ? "R" + (k + 1) + " ← w" + c.from : null).filter(Boolean));
   const heaviest = j.weekSoftBest.map((x, i) => [x, i]).sort((a, b) => b[0] - a[0]).slice(0, 5).map(a => "week " + (a[1] + 1)).join(", ");
@@ -537,7 +563,7 @@ $("btnDefault").onclick = loadDefault;
 $("btnCheck").onclick = check;
 $("btnStart").onclick = start;
 $("btnStop").onclick = stop;
-$("btnReset").onclick = () => { scores = DEFAULT_SCORES.slice(); setSliders(); };
+$("btnReset").onclick = () => { scores = DEFAULT_SCORES.slice(); never = Array(13).fill(false); DEFAULT_NEVER.forEach(i => { never[i] = true; }); setSliders(); refreshNever(); };
 $("btnAll5").onclick = () => { scores = scores.map(() => 5); setSliders(); };
 $("btnFile").onclick = () => $("file").click();
 $("file").onchange = async e => {
@@ -580,7 +606,7 @@ $("vOrig").onclick = () => { view = "orig"; $("vOrig").className = "on"; $("vBes
 // opstart: bouw sliders met bekende namen, laad status (server onthoudt de laatste reeks) of het voorbeeld
 buildSliders();
 fetch("/api/status").then(r => r.json()).then(j => {
-  if (j.rules && j.series) { $("series").value = j.series; handle(j); if (j.state === "running") poll(); }
+  if (j.rules && j.series) { if (j.never) { never = j.never.slice(); refreshNever(); } $("series").value = j.series; handle(j); if (j.state === "running") poll(); }
   else loadDefault();
 });
 </script>

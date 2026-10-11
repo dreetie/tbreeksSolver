@@ -19,9 +19,13 @@ Opruimen: `./clean.sh` verwijdert image, cache en build-map. De pagina is enkel 
    gemiddelde duur, CY, RH, ...) met de samenvatting van je PDF.
    `tools/pdf2reeks.py` doet hetzelfde op de commandolijn (in een wegwerpcontainer, zie het bestand).
 2. **Sliders** (cijfer 1 tot 10, 0 = telt niet mee): bij **vermijden** betekent een hoog cijfer "dat wil ik zo weinig mogelijk", bij **behouden** "dat wil ik graag hebben".
-   Zaterdag en zondag samen zijn één slider (volledige weekends): op 10 zijn halve weekends helemaal uitgesloten. "Twee weekends na elkaar werken" heeft een eigen slider (twee na elkaar telt 1x, drie na elkaar 4x, vier 9x); op 10 is het uitgesloten (harde regel H16).
    Elke regel wordt intern omgerekend naar "hoe vaak komt het voor"; het cijfer bepaalt hoeveel één voorkomen weegt
    (5 = gewoon, elke 2,5 stappen is 5x zwaarder: 3 = ca. 0,3x, 10 = 25x). Zo zijn alle sliders onderling vergelijkbaar.
+   Zaterdag en zondag samen zijn één slider (volledige weekends).
+   Bij elke slider staat een vakje **"nooit toestaan"**: dan wordt dat punt een harde regel (met de omschrijving die er bij staat) in plaats van een voorkeur.
+   Standaard staan alleen "halve weekends" en "twee weekends na elkaar" op nooit. Vind de solver geen reeks die al je "nooit"-keuzes haalt,
+   dan toont de pagina een melding met de regels die nog overtreden worden en een knop om ze weer zacht te maken (geen wiskundig bewijs van onhaalbaarheid).
+   "Vroege en late diensten in blokken": elke wissel tussen vroeg (begin vóór 08:00), dag en laat (vanaf 13:00) telt, rechtstreeks vroeg naar laat 3x zwaarder.
 3. **Start**: kies duur en parallelle runs (standaard aantal cores - 1; elke run is een onafhankelijke zoektocht, de beste wint).
    "Huidig voorstel" als startpunt verfijnt een eerder resultaat.
 4. Resultaat: tabel huidig/voorstel, kalender (gestippeld = verplaatst, cijfer = oorspronkelijke week) en de nieuwe reeks als tekst.
@@ -53,7 +57,7 @@ Dezelfde bouwstappen zijn op Linux getest (app start, rekent en geeft 0 harde ov
 
 * Model: elke dag is een planning entity (`Slot`) met als variabele de cel (`Cell`) die er staat. De waardenbereiken zijn per kolom, dus de reeks blijft altijd een permutatie per kolom.
 * Eigen zetten (`ReeksMoves`): twee weken in een kolom wisselen, insertie, hele week wisselen, R6+R7 samen, R1–R5 samen, kolombereik, kolom roteren, twee aansluitende weken wisselen.
-* Constraints (`RosterConstraints`): 13 harde (waarvan H15 optioneel) en 12 zachte constraints. Alle regels worden in een cyclische pass (`Evaluator`) berekend; elke zachte constraint krijgt zijn gewicht via `ConstraintWeightOverrides` (de sliders).
+* Constraints (`RosterConstraints`): 12 verplichte harde regels, 13 optionele "nooit"-regels (een per zachte regel) en 13 zachte constraints. Alle regels worden in een cyclische pass (`Evaluator`) berekend; elke zachte constraint krijgt zijn gewicht via `ConstraintWeightOverrides` (de sliders).
 * Zoeken: simulated annealing in drie fasen (warm, koeler, koud), elke fase vanaf het beste resultaat.
 
 ## Controle

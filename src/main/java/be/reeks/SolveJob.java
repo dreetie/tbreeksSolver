@@ -54,8 +54,8 @@ public final class SolveJob {
 
     private final java.util.List<Solver<Roster>> solvers = new java.util.concurrent.CopyOnWriteArrayList<>();
     public volatile int threads = 1;
-    public volatile boolean forbidHalf = true;
-    public volatile boolean forbidConsec = true;
+    /** Per zachte regel: staat "nooit" aan (harde regel)? */
+    public volatile boolean[] never = new boolean[Rules.Z];
     private HardSoftLongScore globalBest;
 
     private void run() {
@@ -131,8 +131,7 @@ public final class SolveJob {
         }
         Map<String, HardSoftLongScore> w = new HashMap<>();
         for (int i = 0; i < Rules.Z; i++) w.put(Rules.SOFT[i], HardSoftLongScore.ofSoft(Rules.weightFor(i, scores[i])));
-        w.put(Rules.HARD[12], forbidHalf ? HardSoftLongScore.ofHard(1) : HardSoftLongScore.ZERO);
-        w.put(Rules.HARD[13], forbidConsec ? HardSoftLongScore.ofHard(1) : HardSoftLongScore.ZERO);
+        for (int i = 0; i < Rules.Z; i++) w.put(Rules.NEVER[i], never[i] ? HardSoftLongScore.ofHard(1) : HardSoftLongScore.ZERO);
         ConstraintWeightOverrides<HardSoftLongScore> overrides = ConstraintWeightOverrides.of(w);
         return new Roster(series.cells, slots, overrides);
     }

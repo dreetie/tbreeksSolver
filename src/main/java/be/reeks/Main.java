@@ -21,8 +21,21 @@ public final class Main {
     private static int[] scores = Rules.DEFAULT_SCORE.clone();
     private static int seconds = 60;
     private static String seriesError;
-    private static boolean forbidHalf = true;
-    private static boolean forbidConsec = true;
+    private static boolean[] never = defaultNever();
+
+    private static boolean[] defaultNever() {
+        boolean[] n = new boolean[Rules.Z];
+        n[4] = true; n[11] = true;       // halve weekends en twee weekends na elkaar
+        return n;
+    }
+
+    private static boolean[] parseNever(String s) {
+        if (s == null || s.length() != Rules.Z) return defaultNever();
+        boolean[] n = new boolean[Rules.Z];
+        for (int i = 0; i < Rules.Z; i++) n[i] = s.charAt(i) == '1';
+        n[9] = false;
+        return n;
+    }
 
     public static void main(String[] args) throws Exception {
         boolean gui = false;
@@ -111,8 +124,7 @@ public final class Main {
         Map<String, String> m = parseBody(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8), sb);
         try {
             scores = parseScores(m.get("scores"));
-            forbidHalf = !"0".equals(m.get("forbidHalf"));
-            forbidConsec = !"0".equals(m.get("forbidConsec"));
+            never = parseNever(m.get("never"));
             if (job == null || job.state != SolveJob.State.RUNNING) {
                 series = Series.parse(sb.toString());
                 seriesText = sb.toString();
@@ -130,7 +142,7 @@ public final class Main {
             if (job != null && job.state == SolveJob.State.RUNNING) throw new IllegalStateException("Er loopt al een optimalisatie");
             Series s = Series.parse(sb.toString());
             int[] sc = parseScores(m.get("scores"));
-            forbidHalf = !"0".equals(m.get("forbidHalf"));
+            never = parseNever(m.get("never"));
             int secs = Math.max(5, Math.min(3600, Integer.parseInt(m.getOrDefault("seconds", "60"))));
             long seed = Long.parseLong(m.getOrDefault("seed", String.valueOf(System.nanoTime() % 100000)));
             int[] startGrid = s.original;
@@ -140,8 +152,7 @@ public final class Main {
             job = new SolveJob(s, sc, secs, seed, startGrid);
             int cores = Runtime.getRuntime().availableProcessors();
             job.threads = Math.max(1, Math.min(16, Integer.parseInt(m.getOrDefault("threads", String.valueOf(Math.max(1, cores - 1))))));
-            job.forbidHalf = forbidHalf;
-            job.forbidConsec = forbidConsec;
+            job.never = never.clone();
             job.start();
             send(ex, 200, "application/json", "{\"ok\":true}");
         } catch (Exception e) {
@@ -150,12 +161,12 @@ public final class Main {
     }
 
     private static synchronized String status() {
-        if (series == null) return Report.status(null, scores, null, seriesError, null, null, null, "idle", 0, seconds, null, forbidHalf, forbidConsec);
+        if (series == null) return Report.status(null, scores, null, seriesError, null, null, null, "idle", 0, seconds, null, never);
         Evaluator.Result base = Evaluator.evaluate(series.params, series.original, true);
         int[] g = job != null ? job.bestGrid : series.original;
         Evaluator.Result best = Evaluator.evaluate(series.params, g, true);
         String state = job == null ? "idle" : job.state.name().toLowerCase();
         double el = job == null ? 0 : job.elapsedSeconds();
-        return Report.status(series, scores, job, seriesError, base, best, g, state, el, seconds, seriesText, forbidHalf, forbidConsec);
+        return Report.status(series, scores, job, seriesError, base, best, g, state, el, seconds, seriesText, never);
     }
 }

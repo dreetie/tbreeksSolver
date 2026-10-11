@@ -9,8 +9,7 @@ public final class SolveTool {
         int secs = Integer.parseInt(a[1]);
         int[] scores = a.length > 2 ? Arrays.stream(a[2].split(",")).mapToInt(Integer::parseInt).toArray() : Rules.DEFAULT_SCORE;
         SolveJob j = new SolveJob(s, scores, secs, Long.parseLong(a.length > 3 ? a[3] : "1"), s.original);
-        j.forbidHalf = a.length > 4 && a[4].contains("half");
-        j.forbidConsec = a.length > 4 && a[4].contains("consec");
+        if (a.length > 4) for (String x : a[4].split(",")) if (!x.isEmpty()) j.never[Integer.parseInt(x)] = true;   // lijst van soft-regel-indexen die "nooit" zijn
         j.start();
         while (j.state == SolveJob.State.RUNNING) {
             Thread.sleep(5000);
